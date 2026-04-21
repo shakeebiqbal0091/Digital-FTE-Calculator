@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+}
+
+model Employee {
+  id           Int          @id @default(autoincrement())
+  name         String
+  employeeType EmployeeType
+  hoursPerWeek Float
+  departmentId Int
+  department   Department   @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Config {
+  id            Int      @id @default(1)
+  standardHours Float    @default(40)
+  updatedAt     DateTime @updatedAt
+}
+
+enum EmployeeType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+}

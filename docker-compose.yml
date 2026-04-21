@@ -1,0 +1,17 @@
+# fte-calculator/docker-compose.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: fte_db
+    environment:
+      POSTGRES_USER: fte_user
+      POSTGRES_PASSWORD: fte_pass
+      POSTGRES_DB: fte_calculator
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
