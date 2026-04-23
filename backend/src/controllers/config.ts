@@ -1,28 +1,26 @@
-import { Request, Response } from 'express'
+import { Response } from 'express'
 import prisma from '../lib/prisma'
+import { AuthRequest } from '../middleware/auth'
 
-// GET config (standard hours)
-export const getConfig = async (req: Request, res: Response) => {
-  let config = await prisma.config.findUnique({ where: { id: 1 } })
+export const getConfig = async (req: AuthRequest, res: Response) => {
+  let config = await prisma.config.findUnique({ where: { organizationId: req.orgId } })
 
-  // Auto-create default config if not exists
   if (!config) {
     config = await prisma.config.create({
-      data: { id: 1, standardHours: 40 },
+      data: { standardHours: 40, organizationId: req.orgId! }
     })
   }
   res.json(config)
 }
 
-// PUT update standard hours
-export const updateConfig = async (req: Request, res: Response) => {
+export const updateConfig = async (req: AuthRequest, res: Response) => {
   const { standardHours } = req.body
   if (!standardHours) return res.status(400).json({ error: 'standardHours is required' })
 
   const config = await prisma.config.upsert({
-    where: { id: 1 },
+    where: { organizationId: req.orgId },
     update: { standardHours },
-    create: { id: 1, standardHours },
+    create: { standardHours, organizationId: req.orgId! }
   })
   res.json(config)
 }

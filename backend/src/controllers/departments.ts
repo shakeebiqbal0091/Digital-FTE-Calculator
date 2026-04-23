@@ -1,35 +1,34 @@
-import { Request, Response } from 'express'
+import { Response } from 'express'
 import prisma from '../lib/prisma'
+import { AuthRequest } from '../middleware/auth'
 
-// GET all departments with FTE summary
-export const getDepartments = async (req: Request, res: Response) => {
-  const config = await prisma.config.findUnique({ where: { id: 1 } })
+export const getDepartments = async (req: AuthRequest, res: Response) => {
+  const config = await prisma.config.findUnique({ where: { organizationId: req.orgId } })
   const standardHours = config?.standardHours || 40
 
   const departments = await prisma.department.findMany({
+    where: { organizationId: req.orgId },
     include: { employees: true },
   })
 
-  // Calculate FTE per department
-  const summary = departments.map((dept) => ({
+  const summary = departments.map(dept => ({
     id: dept.id,
     name: dept.name,
     headcount: dept.employees.length,
     totalFTE: parseFloat(
-      dept.employees
-        .reduce((sum, e) => sum + e.hoursPerWeek / standardHours, 0)
-        .toFixed(2)
+      dept.employees.reduce((sum, e) => sum + e.hoursPerWeek / standardHours, 0).toFixed(2)
     ),
   }))
 
   res.json(summary)
 }
 
-// POST create department
-export const createDepartment = async (req: Request, res: Response) => {
+export const createDepartment = async (req: AuthRequest, res: Response) => {
   const { name } = req.body
   if (!name) return res.status(400).json({ error: 'Name is required' })
 
-  const department = await prisma.department.create({ data: { name } })
+  const department = await prisma.department.create({
+    data: { name, organizationId: req.orgId! }
+  })
   res.status(201).json(department)
 }

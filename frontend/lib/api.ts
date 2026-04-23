@@ -1,7 +1,17 @@
 import axios from 'axios'
+import { getSession } from 'next-auth/react'
 
 const api = axios.create({
   baseURL: 'http://localhost:4000/api',
+})
+
+// Auto-attach JWT token from session to every request
+api.interceptors.request.use(async (config) => {
+  const session = await getSession()
+  if (session) {
+    config.headers.Authorization = `Bearer ${(session as any).accessToken}`
+  }
+  return config
 })
 
 export interface Department {
@@ -25,18 +35,17 @@ export interface Config {
   standardHours: number
 }
 
-// Employees
-export const getEmployees = () => api.get<Employee[]>('/employees').then(r => r.data)
+export const getEmployees   = () => api.get<Employee[]>('/employees').then(r => r.data)
 export const createEmployee = (data: Omit<Employee, 'id' | 'department'>) =>
   api.post<Employee>('/employees', data).then(r => r.data)
 export const deleteEmployee = (id: number) => api.delete(`/employees/${id}`)
+export const updateEmployee = (id: number, data: Partial<Employee>) =>
+  api.put<Employee>(`/employees/${id}`, data).then(r => r.data)
 
-// Departments
-export const getDepartments = () => api.get<Department[]>('/departments').then(r => r.data)
+export const getDepartments   = () => api.get<Department[]>('/departments').then(r => r.data)
 export const createDepartment = (name: string) =>
   api.post<Department>('/departments', { name }).then(r => r.data)
 
-// Config
-export const getConfig = () => api.get<Config>('/config').then(r => r.data)
+export const getConfig    = () => api.get<Config>('/config').then(r => r.data)
 export const updateConfig = (standardHours: number) =>
   api.put<Config>('/config', { standardHours }).then(r => r.data)

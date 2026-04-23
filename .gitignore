@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files - NEVER commit these
+.env
+.env.local
+.env.development
+.env.production
+**/.env
+**/.env.local
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Build outputs
+backend/dist/
+
+# Prisma
+backend/prisma/migrations/dev.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker volumes (data stays local)
+postgres_data/
