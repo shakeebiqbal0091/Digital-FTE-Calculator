@@ -49,3 +49,30 @@ export const createDepartment = (name: string) =>
 export const getConfig    = () => api.get<Config>('/config').then(r => r.data)
 export const updateConfig = (standardHours: number) =>
   api.put<Config>('/config', { standardHours }).then(r => r.data)
+
+export interface Automation {
+  id: number
+  name: string
+  description?: string
+  departmentId: number
+  department: { id: number; name: string }
+  hoursSavedPerWeek: number
+  employeesAffected: number
+  status: 'ACTIVE' | 'PILOT' | 'PLANNED'
+  digitalFTE: number
+  annualHoursSaved: number
+}
+
+export interface AutomationSummary {
+  totalHoursSaved: number
+  totalDigitalFTE: number
+  count: number
+}
+
+export const getAutomations = () =>
+  api.get<{ automations: Automation[]; summary: AutomationSummary }>('/automations').then(r => r.data)
+
+export const createAutomation = (data: Omit<Automation, 'id' | 'department' | 'digitalFTE' | 'annualHoursSaved'>) =>
+  api.post<Automation>('/automations', data).then(r => r.data)
+
+export const deleteAutomation = (id: number) => api.delete(`/automations/${id}`)

@@ -16,6 +16,7 @@ model Organization {
   employees   Employee[]
   departments Department[]
   config      Config?
+  automations  Automation[]
 }
 
 model User {
@@ -36,6 +37,7 @@ model Department {
   organization   Organization @relation(fields: [organizationId], references: [id])
   employees      Employee[]
   createdAt      DateTime     @default(now())
+  automations  Automation[]
 
   @@unique([name, organizationId])
 }
@@ -70,4 +72,25 @@ enum EmployeeType {
 enum Role {
   ADMIN
   MEMBER
+}
+
+model Automation {
+  id               Int          @id @default(autoincrement())
+  name             String
+  description      String?
+  departmentId     Int
+  department       Department   @relation(fields: [departmentId], references: [id])
+  organizationId   Int
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  hoursSavedPerWeek Float
+  employeesAffected Int
+  status           AutomationStatus @default(ACTIVE)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+enum AutomationStatus {
+  ACTIVE
+  PILOT
+  PLANNED
 }

@@ -1,6 +1,23 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
+import type { Session, User } from 'next-auth'
+import type { JWT } from 'next-auth/jwt'
 import axios from 'axios'
+
+type AuthUser = User & {
+  accessToken?: string
+  organization?: unknown
+}
+
+type AppToken = JWT & {
+  myAccessToken?: string
+  organization?: unknown
+}
+
+type AppSession = Session & {
+  accessToken?: string
+  organization?: unknown
+}
 
 const handler = NextAuth({
   providers: [
@@ -29,16 +46,20 @@ const handler = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user }) {
+      const appToken = token as AppToken
       if (user) {
-        token.myAccessToken  = (user as any).accessToken
-        token.organization   = (user as any).organization
+        const authUser = user as AuthUser
+        appToken.myAccessToken = authUser.accessToken
+        appToken.organization = authUser.organization
       }
-      return token
+      return appToken
     },
     async session({ session, token }) {
-      (session as any).accessToken  = token.myAccessToken
-      (session as any).organization = token.organization
-      return session
+      const appSession = session as AppSession
+      const appToken = token as AppToken
+      appSession.accessToken = appToken.myAccessToken
+      appSession.organization = appToken.organization
+      return appSession
     },
   },
   pages:   { signIn: '/login' },

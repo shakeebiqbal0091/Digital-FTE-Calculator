@@ -10,15 +10,14 @@ import {
 } from '@/lib/api'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell
 } from 'recharts'
 
 const TYPE_COLORS: Record<string, string> = {
-  FULL_TIME: '#378ADD',
-  PART_TIME: '#1D9E75',
-  CONTRACT:  '#EF9F27',
+  FULL_TIME: '#0F62FE',
+  PART_TIME: '#42BE65',
+  CONTRACT:  '#FF832B',
 }
-
 const TYPE_LABELS: Record<string, string> = {
   FULL_TIME: 'Full-time',
   PART_TIME: 'Part-time',
@@ -37,7 +36,12 @@ export default function Dashboard() {
   const [hours, setHours]             = useState<number>(40)
   const [stdHours, setStdHours]       = useState<number>(40)
   const [editingId, setEditingId]     = useState<number | null>(null)
+  const [search, setSearch]           = useState('')
+  const [filterDept, setFilterDept]   = useState('')
+  const [filterType, setFilterType]   = useState('')
+  const [filterFTE, setFilterFTE]     = useState('')
   const [editForm, setEditForm]       = useState<Partial<Employee>>({})
+  const [activeTab, setActiveTab]     = useState<'overview' | 'employees' | 'departments'>('overview')
   const { data: session } = useSession()
 
   const fetchAll = async () => {
@@ -55,11 +59,7 @@ export default function Dashboard() {
 
   const handleAddEmployee = async () => {
     if (!name || !dept || !hours) return alert('Fill all fields')
-    await createEmployee({
-      name, employeeType: type,
-      hoursPerWeek: hours,
-      departmentId: parseInt(dept),
-    })
+    await createEmployee({ name, employeeType: type, hoursPerWeek: hours, departmentId: parseInt(dept) })
     setName(''); setHours(40)
     fetchAll()
   }
@@ -78,272 +78,459 @@ export default function Dashboard() {
 
   const handleEditStart = (emp: Employee) => {
     setEditingId(emp.id)
-    setEditForm({
-      name: emp.name,
-      employeeType: emp.employeeType,
-      hoursPerWeek: emp.hoursPerWeek,
-      departmentId: emp.departmentId,
-    })
+    setEditForm({ name: emp.name, employeeType: emp.employeeType, hoursPerWeek: emp.hoursPerWeek, departmentId: emp.departmentId })
   }
 
   const handleEditSave = async (id: number) => {
-    if (!editForm.name || !editForm.hoursPerWeek || !editForm.departmentId) {
-      return alert('All fields required')
-    }
+    if (!editForm.name || !editForm.hoursPerWeek || !editForm.departmentId) return alert('All fields required')
     await axios.put(`http://localhost:4000/api/employees/${id}`, editForm)
-    setEditingId(null)
-    setEditForm({})
+    setEditingId(null); setEditForm({})
     fetchAll()
   }
 
-  const handleEditCancel = () => {
-    setEditingId(null)
-    setEditForm({})
-  }
-
-  const handleUpdateConfig = async () => {
-    await updateConfig(stdHours)
-    fetchAll()
-  }
+  const handleEditCancel = () => { setEditingId(null); setEditForm({}) }
+  const handleUpdateConfig = async () => { await updateConfig(stdHours); fetchAll() }
 
   const totalFTE = employees.reduce((s, e) => s + e.hoursPerWeek / config.standardHours, 0)
   const fullTimeCount = employees.filter(e => e.employeeType === 'FULL_TIME').length
-
-  const typeData = ['FULL_TIME', 'PART_TIME', 'CONTRACT'].map(t => ({
-    name: TYPE_LABELS[t],
-    value: employees.filter(e => e.employeeType === t).length,
+  const filteredEmployees = employees.filter(e => {
+  const fte = e.hoursPerWeek / config.standardHours
+    const matchSearch = e.name.toLowerCase().includes(search.toLowerCase())
+    const matchDept   = !filterDept || e.departmentId === parseInt(filterDept)
+    const matchType   = !filterType || e.employeeType === filterType
+    const matchFTE    = !filterFTE  ||
+      (filterFTE === 'lt05'  && fte < 0.5)  ||
+      (filterFTE === '0510'  && fte >= 0.5 && fte < 1.0) ||
+      (filterFTE === 'eq1'   && fte === 1.0) ||
+      (filterFTE === 'gt1'   && fte > 1.0)
+    return matchSearch && matchDept && matchType && matchFTE
+  })
+  const typeData = ['FULL_TIME','PART_TIME','CONTRACT'].map(t => ({
+    name: TYPE_LABELS[t], value: employees.filter(e => e.employeeType === t).length
   })).filter(d => d.value > 0)
 
+  const inputStyle: React.CSSProperties = {
+    padding: '9px 12px', border: '1px solid #E4E7EC', borderRadius: '8px',
+    fontSize: '13.5px', background: '#fff', color: '#101828',
+    outline: 'none', width: '100%', fontFamily: 'inherit',
+    transition: 'border-color 0.15s',
+  }
+  const selectStyle: React.CSSProperties = { ...inputStyle, cursor: 'pointer' }
+
   if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', fontFamily:'sans-serif' }}>
-      Loading...
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#F9FAFB', fontFamily:"'DM Sans', sans-serif" }}>
+      <div style={{ textAlign:'center' }}>
+        <div style={{ width:40, height:40, border:'3px solid #E4E7EC', borderTopColor:'#0F62FE', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 16px' }} />
+        <p style={{ color:'#667085', fontSize:14 }}>Loading your workspace...</p>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 
   return (
-    <main style={{ fontFamily:'sans-serif', maxWidth:1100, margin:'0 auto', padding:'2rem 1.5rem' }}>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #F9FAFB; font-family: 'DM Sans', sans-serif; }
+        input:focus, select:focus { border-color: #0F62FE !important; box-shadow: 0 0 0 3px rgba(15,98,254,0.08) !important; }
+        input::placeholder { color: #98A2B3; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #D0D5DD; border-radius: 99px; }
+        tr:hover td { background: #F9FAFB !important; }
+        @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+        .card { animation: fadeIn 0.3s ease forwards; }
+        .btn-primary { background:#0F62FE; color:#fff; border:none; border-radius:8px; padding:'9px 18px'; font-size:13.5px; font-weight:500; cursor:pointer; font-family:inherit; transition: background 0.15s, transform 0.1s; }
+        .btn-primary:hover { background:#0353D9; }
+        .btn-primary:active { transform: scale(0.98); }
+        .nav-tab { padding:8px 16px; border-radius:8px; font-size:13.5px; font-weight:500; cursor:pointer; border:none; background:transparent; font-family:inherit; transition: all 0.15s; color:#667085; }
+        .nav-tab:hover { background:#F2F4F7; color:#344054; }
+        .nav-tab.active { background:#fff; color:#0F62FE; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+      `}</style>
 
-      {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'2rem', flexWrap:'wrap', gap:12 }}>
-        <div>
-          <h1 style={{ fontSize:24, fontWeight:600, margin:0 }}>FTE Calculator</h1>
-          <p style={{ color:'#888', fontSize:14, margin:'4px 0 0' }}>Workforce management dashboard</p>
-        </div>
-        <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:14 }}>
-          <span style={{ color:'#888' }}>Standard hrs/week:</span>
-          <input
-            type="number" value={stdHours} min={1} max={80}
-            onChange={e => setStdHours(Number(e.target.value))}
-            style={{ width:60, padding:'6px 8px', border:'1px solid #ddd', borderRadius:6, fontSize:14, textAlign:'center' }}
-          />
-          <button onClick={handleUpdateConfig}
-            style={{ padding:'6px 14px', background:'#378ADD', color:'#fff', border:'none', borderRadius:6, cursor:'pointer', fontSize:14 }}>
-            Update
-          </button>
-          <button onClick={() => signOut({ callbackUrl: '/login' })}
-            style={{ padding:'6px 14px', background:'none', border:'1px solid #ddd', borderRadius:6, cursor:'pointer', fontSize:14, color:'#666' }}>
-            Sign out {session?.user?.name ? `(${session.user.name})` : ''}
-          </button>
-        </div>
-      </div>
+      <div style={{ minHeight:'100vh', background:'#F9FAFB' }}>
 
-      {/* Metric Cards */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px,1fr))', gap:12, marginBottom:'2rem' }}>
-        {[
-          { label:'Total Headcount', value:employees.length,            sub:'employees' },
-          { label:'Total FTE',       value:totalFTE.toFixed(2),         sub:`@ ${config.standardHours} hrs/wk` },
-          { label:'Departments',     value:departments.length,          sub:'active' },
-          { label:'Full-time',       value:`${employees.length ? Math.round(fullTimeCount/employees.length*100) : 0}%`, sub:`${fullTimeCount} employees` },
-        ].map(c => (
-          <div key={c.label} style={{ background:'#f7f8fa', borderRadius:10, padding:'1rem' }}>
-            <div style={{ fontSize:12, color:'#888', marginBottom:4 }}>{c.label}</div>
-            <div style={{ fontSize:26, fontWeight:600 }}>{c.value}</div>
-            <div style={{ fontSize:12, color:'#aaa', marginTop:2 }}>{c.sub}</div>
+        {/* Top Nav */}
+        <nav style={{ background:'#fff', borderBottom:'1px solid #E4E7EC', padding:'0 32px', display:'flex', alignItems:'center', justifyContent:'space-between', height:60, position:'sticky', top:0, zIndex:100 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:32 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:30, height:30, background:'#0F62FE', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ color:'#fff', fontSize:14, fontWeight:600 }}>F</span>
+              </div>
+              <span style={{ fontWeight:600, fontSize:15, color:'#101828' }}>FTE Calculator</span>
+            </div>
+            <div style={{ display:'flex', gap:4 }}>
+              {(['overview','employees','departments'] as const).map(tab => (
+                <button key={tab} className={`nav-tab${activeTab===tab?' active':''}`} onClick={() => setActiveTab(tab)}>
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
-        ))}
-      </div>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:13.5, color:'#667085' }}>
+              <span>Std hrs:</span>
+              <input type="number" value={stdHours} min={1} max={80}
+                onChange={e => setStdHours(Number(e.target.value))}
+                style={{ ...inputStyle, width:56, textAlign:'center', padding:'5px 8px' }}
+              />
+              <button onClick={handleUpdateConfig}
+                style={{ padding:'5px 12px', background:'#F2F4F7', border:'1px solid #E4E7EC', borderRadius:7, cursor:'pointer', fontSize:13, fontWeight:500, color:'#344054', fontFamily:'inherit' }}>
+                Save
+              </button>
+            </div>
+            <div style={{ width:1, height:24, background:'#E4E7EC' }} />
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:32, height:32, borderRadius:'50%', background:'#EFF4FF', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:600, color:'#0F62FE' }}>
+                {session?.user?.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <span style={{ fontSize:13.5, color:'#344054', fontWeight:500 }}>{session?.user?.name || 'User'}</span>
+            </div>
+            <button onClick={() => signOut({ callbackUrl:'/login' })}
+              style={{ padding:'6px 12px', background:'none', border:'1px solid #E4E7EC', borderRadius:7, cursor:'pointer', fontSize:13, color:'#667085', fontFamily:'inherit', transition:'all 0.15s' }}>
+              Sign out
+            </button>
+          </div>
+        </nav>
 
-      {/* Charts */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:'2rem' }}>
-        <div style={{ background:'#fff', border:'1px solid #eee', borderRadius:12, padding:'1.25rem' }}>
-          <div style={{ fontSize:13, fontWeight:500, color:'#666', marginBottom:16 }}>FTE by department</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={departments}>
-              <XAxis dataKey="name" tick={{ fontSize:12 }} />
-              <YAxis tick={{ fontSize:12 }} />
-              <Tooltip formatter={(v: number) => [v.toFixed(2), 'FTE']} />
-              <Bar dataKey="totalFTE" fill="#378ADD" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ background:'#fff', border:'1px solid #eee', borderRadius:12, padding:'1.25rem' }}>
-          <div style={{ fontSize:13, fontWeight:500, color:'#666', marginBottom:16 }}>Employee type distribution</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={typeData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80}>
-                {typeData.map((_, i) => (
-                  <Cell key={i} fill={Object.values(TYPE_COLORS)[i]} />
+        <div style={{ maxWidth:1200, margin:'0 auto', padding:'32px 32px' }}>
+
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <div className="card">
+              <div style={{ marginBottom:28 }}>
+                <h2 style={{ fontSize:22, fontWeight:600, color:'#101828', marginBottom:4 }}>Workforce Overview</h2>
+                <p style={{ fontSize:14, color:'#667085' }}>Track and manage your organization's FTE across all departments</p>
+              </div>
+
+              {/* Metric Cards */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:28 }}>
+                {[
+                  { label:'Total Headcount', value:employees.length, sub:'employees', icon:'👥', color:'#0F62FE', bg:'#EFF4FF' },
+                  { label:'Total FTE', value:totalFTE.toFixed(2), sub:`@ ${config.standardHours} hrs/wk`, icon:'⚡', color:'#7C3AED', bg:'#F5F3FF' },
+                  { label:'Departments', value:departments.length, sub:'active teams', icon:'🏢', color:'#059669', bg:'#ECFDF5' },
+                  { label:'Full-time Rate', value:`${employees.length ? Math.round(fullTimeCount/employees.length*100) : 0}%`, sub:`${fullTimeCount} of ${employees.length}`, icon:'📊', color:'#D97706', bg:'#FFFBEB' },
+                ].map(c => (
+                  <div key={c.label} style={{ background:'#fff', borderRadius:12, padding:'20px 24px', border:'1px solid #E4E7EC', transition:'box-shadow 0.2s' }}
+                    onMouseEnter={e => (e.currentTarget.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)')}
+                    onMouseLeave={e => (e.currentTarget.style.boxShadow='none')}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+                      <span style={{ fontSize:12, fontWeight:500, color:'#667085', textTransform:'uppercase', letterSpacing:'0.05em' }}>{c.label}</span>
+                      <div style={{ width:36, height:36, borderRadius:8, background:c.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>{c.icon}</div>
+                    </div>
+                    <div style={{ fontSize:28, fontWeight:600, color:'#101828', letterSpacing:'-0.5px', marginBottom:4 }}>{c.value}</div>
+                    <div style={{ fontSize:12.5, color:'#98A2B3' }}>{c.sub}</div>
+                  </div>
                 ))}
-              </Pie>
-              <Legend />
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+              </div>
 
-      {/* Add Department */}
-      <div style={{ background:'#fff', border:'1px solid #eee', borderRadius:12, padding:'1.25rem', marginBottom:'1.5rem' }}>
-        <div style={{ fontSize:13, fontWeight:500, color:'#666', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.04em' }}>Add department</div>
-        <div style={{ display:'flex', gap:8 }}>
-          <input value={newDept} onChange={e => setNewDept(e.target.value)}
-            placeholder="Department name"
-            style={{ flex:1, padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, fontSize:14 }}
-          />
-          <button onClick={handleAddDepartment}
-            style={{ padding:'8px 20px', background:'#1D9E75', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:14 }}>
-            + Add
-          </button>
-        </div>
-      </div>
-
-      {/* Add Employee */}
-      <div style={{ background:'#fff', border:'1px solid #eee', borderRadius:12, padding:'1.25rem', marginBottom:'1.5rem' }}>
-        <div style={{ fontSize:13, fontWeight:500, color:'#666', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.04em' }}>Add employee</div>
-        <div style={{ display:'grid', gridTemplateColumns:'2fr 1.5fr 1.5fr 1fr auto', gap:8, alignItems:'center' }}>
-          <input value={name} onChange={e => setName(e.target.value)}
-            placeholder="Full name"
-            style={{ padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, fontSize:14 }}
-          />
-          <select value={dept} onChange={e => setDept(e.target.value)}
-            style={{ padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, fontSize:14 }}>
-            <option value="">Select department</option>
-            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-          <select value={type} onChange={e => setType(e.target.value as Employee['employeeType'])}
-            style={{ padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, fontSize:14 }}>
-            <option value="FULL_TIME">Full-time</option>
-            <option value="PART_TIME">Part-time</option>
-            <option value="CONTRACT">Contract</option>
-          </select>
-          <input type="number" value={hours} onChange={e => setHours(Number(e.target.value))}
-            placeholder="Hrs/wk" min={1} max={80}
-            style={{ padding:'8px 12px', border:'1px solid #ddd', borderRadius:8, fontSize:14 }}
-          />
-          <button onClick={handleAddEmployee}
-            style={{ padding:'8px 20px', background:'#378ADD', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:14, whiteSpace:'nowrap' }}>
-            + Add
-          </button>
-        </div>
-      </div>
-
-      {/* Employee Table */}
-      <div style={{ background:'#fff', border:'1px solid #eee', borderRadius:12, padding:'1.25rem' }}>
-        <div style={{ fontSize:13, fontWeight:500, color:'#666', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.04em' }}>Employees</div>
-        {employees.length === 0 ? (
-          <div style={{ textAlign:'center', padding:'2rem', color:'#aaa', fontSize:14 }}>No employees yet. Add one above.</div>
-        ) : (
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:14 }}>
-            <thead>
-              <tr style={{ borderBottom:'1px solid #eee' }}>
-                {['Name','Department','Type','Hrs/wk','FTE',''].map(h => (
-                  <th key={h} style={{ textAlign:'left', padding:'8px 10px', color:'#888', fontWeight:500, fontSize:12 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map(e => (
-                <tr key={e.id} style={{ borderBottom:'1px solid #f5f5f5' }}>
-                  {editingId === e.id ? (
-                    <>
-                      <td style={{ padding:'8px 10px' }}>
-                        <input
-                          value={editForm.name || ''}
-                          onChange={ev => setEditForm(f => ({ ...f, name: ev.target.value }))}
-                          style={{ width:'100%', padding:'6px 8px', border:'1px solid #ddd', borderRadius:6, fontSize:13 }}
+              {/* Charts */}
+              <div style={{ display:'grid', gridTemplateColumns:'1.6fr 1fr', gap:16, marginBottom:28 }}>
+                <div style={{ background:'#fff', borderRadius:12, padding:'24px', border:'1px solid #E4E7EC' }}>
+                  <div style={{ marginBottom:20 }}>
+                    <h3 style={{ fontSize:14, fontWeight:600, color:'#101828' }}>FTE by Department</h3>
+                    <p style={{ fontSize:12.5, color:'#98A2B3', marginTop:2 }}>Full-time equivalent per team</p>
+                  </div>
+                  {departments.length === 0 ? (
+                    <div style={{ height:200, display:'flex', alignItems:'center', justifyContent:'center', color:'#D0D5DD', fontSize:13 }}>No departments yet</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={departments} barSize={32}>
+                        <XAxis dataKey="name" tick={{ fontSize:12, fill:'#98A2B3' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize:12, fill:'#98A2B3' }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          contentStyle={{ border:'1px solid #E4E7EC', borderRadius:8, fontSize:13, boxShadow:'0 4px 12px rgba(0,0,0,0.08)' }}
+                          formatter={(v: number) => [v.toFixed(2), 'FTE']}
                         />
-                      </td>
-                      <td style={{ padding:'8px 10px' }}>
-                        <select
-                          value={editForm.departmentId || ''}
-                          onChange={ev => setEditForm(f => ({ ...f, departmentId: parseInt(ev.target.value) }))}
-                          style={{ width:'100%', padding:'6px 8px', border:'1px solid #ddd', borderRadius:6, fontSize:13 }}>
-                          {departments.map(d => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding:'8px 10px' }}>
-                        <select
-                          value={editForm.employeeType || 'FULL_TIME'}
-                          onChange={ev => setEditForm(f => ({ ...f, employeeType: ev.target.value as Employee['employeeType'] }))}
-                          style={{ width:'100%', padding:'6px 8px', border:'1px solid #ddd', borderRadius:6, fontSize:13 }}>
-                          <option value="FULL_TIME">Full-time</option>
-                          <option value="PART_TIME">Part-time</option>
-                          <option value="CONTRACT">Contract</option>
-                        </select>
-                      </td>
-                      <td style={{ padding:'8px 10px' }}>
-                        <input
-                          type="number" min={1} max={80}
-                          value={editForm.hoursPerWeek || ''}
-                          onChange={ev => setEditForm(f => ({ ...f, hoursPerWeek: parseFloat(ev.target.value) }))}
-                          style={{ width:'100%', padding:'6px 8px', border:'1px solid #ddd', borderRadius:6, fontSize:13 }}
-                        />
-                      </td>
-                      <td style={{ padding:'8px 10px', fontWeight:500, color:'#aaa', fontSize:13 }}>
-                        {editForm.hoursPerWeek ? (editForm.hoursPerWeek / config.standardHours).toFixed(2) : '—'}
-                      </td>
-                      <td style={{ padding:'8px 10px', textAlign:'right' }}>
-                        <button onClick={() => handleEditSave(e.id)}
-                          style={{ background:'#378ADD', color:'#fff', border:'none', borderRadius:6, padding:'5px 12px', cursor:'pointer', fontSize:12, marginRight:6 }}>
-                          Save
-                        </button>
-                        <button onClick={handleEditCancel}
-                          style={{ background:'none', border:'1px solid #ddd', borderRadius:6, padding:'5px 10px', cursor:'pointer', fontSize:12, color:'#666' }}>
-                          Cancel
-                        </button>
-                      </td>
-                    </>
+                        <Bar dataKey="totalFTE" fill="#0F62FE" radius={[6,6,0,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                <div style={{ background:'#fff', borderRadius:12, padding:'24px', border:'1px solid #E4E7EC' }}>
+                  <div style={{ marginBottom:20 }}>
+                    <h3 style={{ fontSize:14, fontWeight:600, color:'#101828' }}>Employee Types</h3>
+                    <p style={{ fontSize:12.5, color:'#98A2B3', marginTop:2 }}>Distribution by contract type</p>
+                  </div>
+                  {employees.length === 0 ? (
+                    <div style={{ height:160, display:'flex', alignItems:'center', justifyContent:'center', color:'#D0D5DD', fontSize:13 }}>No employees yet</div>
                   ) : (
                     <>
-                      <td style={{ padding:'10px' }}>{e.name}</td>
-                      <td style={{ padding:'10px', color:'#666' }}>{e.department.name}</td>
-                      <td style={{ padding:'10px' }}>
-                        <span style={{
-                          background: TYPE_COLORS[e.employeeType] + '22',
-                          color: TYPE_COLORS[e.employeeType],
-                          padding:'3px 10px', borderRadius:99, fontSize:12, fontWeight:500
-                        }}>
-                          {TYPE_LABELS[e.employeeType]}
-                        </span>
-                      </td>
-                      <td style={{ padding:'10px', color:'#666' }}>{e.hoursPerWeek}</td>
-                      <td style={{ padding:'10px', fontWeight:500 }}>
-                        {(e.hoursPerWeek / config.standardHours).toFixed(2)}
-                      </td>
-                      <td style={{ padding:'10px', textAlign:'right' }}>
-                        <button onClick={() => handleEditStart(e)}
-                          style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:15, marginRight:4 }}
-                          onMouseEnter={ev => (ev.currentTarget.style.color = '#378ADD')}
-                          onMouseLeave={ev => (ev.currentTarget.style.color = '#ccc')}>
-                          ✏️
-                        </button>
-                        <button onClick={() => handleDeleteEmployee(e.id)}
-                          style={{ background:'none', border:'none', cursor:'pointer', color:'#ccc', fontSize:15 }}
-                          onMouseEnter={ev => (ev.currentTarget.style.color = '#E24B4A')}
-                          onMouseLeave={ev => (ev.currentTarget.style.color = '#ccc')}>
-                          ✕
-                        </button>
-                      </td>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <PieChart>
+                          <Pie data={typeData} dataKey="value" cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={3}>
+                            {typeData.map((_, i) => <Cell key={i} fill={Object.values(TYPE_COLORS)[i]} />)}
+                          </Pie>
+                          <Tooltip contentStyle={{ border:'1px solid #E4E7EC', borderRadius:8, fontSize:13 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:12, marginTop:8 }}>
+                        {typeData.map((d, i) => (
+                          <div key={d.name} style={{ display:'flex', alignItems:'center', gap:6, fontSize:12.5 }}>
+                            <div style={{ width:8, height:8, borderRadius:'50%', background:Object.values(TYPE_COLORS)[i] }} />
+                            <span style={{ color:'#667085' }}>{d.name}</span>
+                            <span style={{ color:'#101828', fontWeight:500 }}>{d.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                </div>
+              </div>
+
+              {/* Recent Employees */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', overflow:'hidden' }}>
+                <div style={{ padding:'20px 24px', borderBottom:'1px solid #F2F4F7', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <h3 style={{ fontSize:14, fontWeight:600, color:'#101828' }}>Recent Employees</h3>
+                    <p style={{ fontSize:12.5, color:'#98A2B3', marginTop:2 }}>Latest 5 additions</p>
+                  </div>
+                  <button onClick={() => setActiveTab('employees')}
+                    style={{ fontSize:13, color:'#0F62FE', background:'none', border:'none', cursor:'pointer', fontWeight:500, fontFamily:'inherit' }}>
+                    View all →
+                  </button>
+                </div>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13.5 }}>
+                  <thead>
+                    <tr style={{ background:'#F9FAFB' }}>
+                      {['Name','Department','Type','Hours/wk','FTE'].map(h => (
+                        <th key={h} style={{ padding:'10px 24px', textAlign:'left', fontSize:12, fontWeight:500, color:'#667085', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.slice(0,5).map(e => (
+                      <tr key={e.id} style={{ borderTop:'1px solid #F2F4F7' }}>
+                        <td style={{ padding:'14px 24px', fontWeight:500, color:'#101828' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                            <div style={{ width:30, height:30, borderRadius:'50%', background:'#F2F4F7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:600, color:'#344054' }}>
+                              {e.name.charAt(0)}
+                            </div>
+                            {e.name}
+                          </div>
+                        </td>
+                        <td style={{ padding:'14px 24px', color:'#667085' }}>{e.department.name}</td>
+                        <td style={{ padding:'14px 24px' }}>
+                          <span style={{ padding:'3px 10px', borderRadius:99, fontSize:12, fontWeight:500, background:TYPE_COLORS[e.employeeType]+'18', color:TYPE_COLORS[e.employeeType] }}>
+                            {TYPE_LABELS[e.employeeType]}
+                          </span>
+                        </td>
+                        <td style={{ padding:'14px 24px', color:'#667085', fontFamily:"'DM Sans', sans-serif" }}>{e.hoursPerWeek}h</td>
+                        <td style={{ padding:'14px 24px', fontWeight:600, color:'#101828', fontFamily:"'DM Sans', sans-serif" }}>
+                          {(e.hoursPerWeek/config.standardHours).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* EMPLOYEES TAB */}
+          {activeTab === 'employees' && (
+            <div className="card">
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:24 }}>
+                <div>
+                  <h2 style={{ fontSize:22, fontWeight:600, color:'#101828', marginBottom:4 }}>Employees</h2>
+                  <p style={{ fontSize:14, color:'#667085' }}>{employees.length} total · {totalFTE.toFixed(2)} FTE</p>
+                </div>
+              </div>
+
+              {/* Add Employee Form */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', padding:'20px 24px', marginBottom:20 }}>
+                <h3 style={{ fontSize:13.5, fontWeight:600, color:'#344054', marginBottom:16 }}>Add Employee</h3>
+                <div style={{ display:'grid', gridTemplateColumns:'2fr 1.5fr 1.5fr 100px auto', gap:10, alignItems:'flex-end' }}>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Full name</label>
+                    <input value={name} onChange={e => setName(e.target.value)} placeholder="Sarah Chen" style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Department</label>
+                    <select value={dept} onChange={e => setDept(e.target.value)} style={selectStyle}>
+                      <option value="">Select...</option>
+                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Type</label>
+                    <select value={type} onChange={e => setType(e.target.value as Employee['employeeType'])} style={selectStyle}>
+                      <option value="FULL_TIME">Full-time</option>
+                      <option value="PART_TIME">Part-time</option>
+                      <option value="CONTRACT">Contract</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Hrs/wk</label>
+                    <input type="number" value={hours} min={1} max={80} onChange={e => setHours(Number(e.target.value))} style={inputStyle} />
+                  </div>
+                  <button onClick={handleAddEmployee}
+                    style={{ padding:'9px 20px', background:'#0F62FE', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13.5, fontWeight:500, fontFamily:'inherit', whiteSpace:'nowrap', height:40 }}>
+                    + Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Employee Table */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', overflow:'hidden' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13.5 }}>
+                  <thead>
+                    <tr style={{ background:'#F9FAFB', borderBottom:'1px solid #E4E7EC' }}>
+                      {['Employee','Department','Type','Hrs/wk','FTE',''].map(h => (
+                        <th key={h} style={{ padding:'12px 20px', textAlign:'left', fontSize:12, fontWeight:500, color:'#667085', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.length === 0 ? (
+                      <tr><td colSpan={6} style={{ padding:'48px', textAlign:'center', color:'#D0D5DD', fontSize:14 }}>No employees yet. Add one above.</td></tr>
+                    ) : employees.map(e => (
+                      <tr key={e.id} style={{ borderTop:'1px solid #F2F4F7' }}>
+                        {editingId === e.id ? (
+                          <>
+                            <td style={{ padding:'10px 20px' }}><input value={editForm.name||''} onChange={ev => setEditForm(f=>({...f,name:ev.target.value}))} style={{...inputStyle,width:'100%'}} /></td>
+                            <td style={{ padding:'10px 20px' }}>
+                              <select value={editForm.departmentId||''} onChange={ev => setEditForm(f=>({...f,departmentId:parseInt(ev.target.value)}))} style={{...selectStyle,width:'100%'}}>
+                                {departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding:'10px 20px' }}>
+                              <select value={editForm.employeeType||'FULL_TIME'} onChange={ev => setEditForm(f=>({...f,employeeType:ev.target.value as Employee['employeeType']}))} style={{...selectStyle,width:'100%'}}>
+                                <option value="FULL_TIME">Full-time</option>
+                                <option value="PART_TIME">Part-time</option>
+                                <option value="CONTRACT">Contract</option>
+                              </select>
+                            </td>
+                            <td style={{ padding:'10px 20px' }}><input type="number" value={editForm.hoursPerWeek||''} onChange={ev => setEditForm(f=>({...f,hoursPerWeek:parseFloat(ev.target.value)}))} style={{...inputStyle,width:'100%'}} /></td>
+                            <td style={{ padding:'10px 20px', color:'#98A2B3', fontFamily:"'DM Sans', sans-serif" }}>{editForm.hoursPerWeek?(editForm.hoursPerWeek/config.standardHours).toFixed(2):'—'}</td>
+                            <td style={{ padding:'10px 20px' }}>
+                              <div style={{ display:'flex', gap:8 }}>
+                                <button onClick={()=>handleEditSave(e.id)} style={{ padding:'6px 14px', background:'#0F62FE', color:'#fff', border:'none', borderRadius:6, cursor:'pointer', fontSize:12.5, fontWeight:500, fontFamily:'inherit' }}>Save</button>
+                                <button onClick={handleEditCancel} style={{ padding:'6px 12px', background:'none', border:'1px solid #E4E7EC', borderRadius:6, cursor:'pointer', fontSize:12.5, color:'#667085', fontFamily:'inherit' }}>Cancel</button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={{ padding:'14px 20px' }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                                <div style={{ width:32, height:32, borderRadius:'50%', background:'#F2F4F7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12.5, fontWeight:600, color:'#344054', flexShrink:0 }}>
+                                  {e.name.charAt(0)}
+                                </div>
+                                <span style={{ fontWeight:500, color:'#101828' }}>{e.name}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding:'14px 20px', color:'#667085' }}>{e.department.name}</td>
+                            <td style={{ padding:'14px 20px' }}>
+                              <span style={{ padding:'3px 10px', borderRadius:99, fontSize:12, fontWeight:500, background:TYPE_COLORS[e.employeeType]+'18', color:TYPE_COLORS[e.employeeType] }}>
+                                {TYPE_LABELS[e.employeeType]}
+                              </span>
+                            </td>
+                            <td style={{ padding:'14px 20px', color:'#667085', fontFamily:"'DM Sans', sans-serif" }}>{e.hoursPerWeek}h</td>
+                            <td style={{ padding:'14px 20px', fontWeight:600, color:'#101828', fontFamily:"'DM Sans', sans-serif" }}>{(e.hoursPerWeek/config.standardHours).toFixed(2)}</td>
+                            <td style={{ padding:'14px 20px', textAlign:'right' }}>
+                              <div style={{ display:'flex', gap:4, justifyContent:'flex-end' }}>
+                                <button onClick={()=>handleEditStart(e)} title="Edit"
+                                  style={{ width:32, height:32, borderRadius:6, border:'1px solid #E4E7EC', background:'#fff', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', color:'#667085', transition:'all 0.15s' }}
+                                  onMouseEnter={ev=>{ev.currentTarget.style.borderColor='#0F62FE';ev.currentTarget.style.color='#0F62FE'}}
+                                  onMouseLeave={ev=>{ev.currentTarget.style.borderColor='#E4E7EC';ev.currentTarget.style.color='#667085'}}>
+                                  ✏️
+                                </button>
+                                <button onClick={()=>handleDeleteEmployee(e.id)} title="Delete"
+                                  style={{ width:32, height:32, borderRadius:6, border:'1px solid #E4E7EC', background:'#fff', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', color:'#667085', transition:'all 0.15s' }}
+                                  onMouseEnter={ev=>{ev.currentTarget.style.borderColor='#F04438';ev.currentTarget.style.color='#F04438'}}
+                                  onMouseLeave={ev=>{ev.currentTarget.style.borderColor='#E4E7EC';ev.currentTarget.style.color='#667085'}}>
+                                  ✕
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* DEPARTMENTS TAB */}
+          {activeTab === 'departments' && (
+            <div className="card">
+              <div style={{ marginBottom:24 }}>
+                <h2 style={{ fontSize:22, fontWeight:600, color:'#101828', marginBottom:4 }}>Departments</h2>
+                <p style={{ fontSize:14, color:'#667085' }}>{departments.length} active departments</p>
+              </div>
+
+              {/* Add Department */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', padding:'20px 24px', marginBottom:20 }}>
+                <h3 style={{ fontSize:13.5, fontWeight:600, color:'#344054', marginBottom:16 }}>Add Department</h3>
+                <div style={{ display:'flex', gap:10 }}>
+                  <input value={newDept} onChange={e => setNewDept(e.target.value)}
+                    placeholder="e.g. Engineering, Operations, HR..."
+                    onKeyDown={e => e.key==='Enter' && handleAddDepartment()}
+                    style={{ ...inputStyle, maxWidth:400 }}
+                  />
+                  <button onClick={handleAddDepartment}
+                    style={{ padding:'9px 20px', background:'#0F62FE', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13.5, fontWeight:500, fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                    + Add Department
+                  </button>
+                </div>
+              </div>
+
+              {/* Department Cards */}
+              {departments.length === 0 ? (
+                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', padding:'48px', textAlign:'center', color:'#D0D5DD', fontSize:14 }}>
+                  No departments yet. Add your first one above.
+                </div>
+              ) : (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:16 }}>
+                  {departments.map((d, i) => {
+                    const colors = ['#0F62FE','#7C3AED','#059669','#D97706','#DC2626','#0891B2']
+                    const c = colors[i % colors.length]
+                    return (
+                      <div key={d.id} style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', padding:'24px', transition:'box-shadow 0.2s' }}
+                        onMouseEnter={e => (e.currentTarget.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)')}
+                        onMouseLeave={e => (e.currentTarget.style.boxShadow='none')}>
+                        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+                          <div style={{ width:40, height:40, borderRadius:10, background:c+'18', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
+                            🏢
+                          </div>
+                          <div>
+                            <div style={{ fontWeight:600, color:'#101828', fontSize:15 }}>{d.name}</div>
+                            <div style={{ fontSize:12.5, color:'#98A2B3', marginTop:1 }}>{d.headcount} {d.headcount===1?'employee':'employees'}</div>
+                          </div>
+                        </div>
+                        <div style={{ display:'flex', justifyContent:'space-between', padding:'14px 16px', background:'#F9FAFB', borderRadius:8 }}>
+                          <div style={{ textAlign:'center' }}>
+                            <div style={{ fontSize:20, fontWeight:700, color:'#101828', fontFamily:"'DM Sans', sans-serif" }}>{d.totalFTE.toFixed(2)}</div>
+                            <div style={{ fontSize:11.5, color:'#98A2B3', marginTop:2, textTransform:'uppercase', letterSpacing:'0.05em' }}>Total FTE</div>
+                          </div>
+                          <div style={{ width:1, background:'#E4E7EC' }} />
+                          <div style={{ textAlign:'center' }}>
+                            <div style={{ fontSize:20, fontWeight:700, color:'#101828' }}>{d.headcount}</div>
+                            <div style={{ fontSize:11.5, color:'#98A2B3', marginTop:2, textTransform:'uppercase', letterSpacing:'0.05em' }}>Headcount</div>
+                          </div>
+                          <div style={{ width:1, background:'#E4E7EC' }} />
+                          <div style={{ textAlign:'center' }}>
+                            <div style={{ fontSize:20, fontWeight:700, color:'#101828', fontFamily:"'DM Sans', sans-serif" }}>
+                              {d.headcount ? (d.totalFTE/d.headcount).toFixed(2) : '0.00'}
+                            </div>
+                            <div style={{ fontSize:11.5, color:'#98A2B3', marginTop:2, textTransform:'uppercase', letterSpacing:'0.05em' }}>Avg FTE</div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    </main>
+    </>
   )
 }
