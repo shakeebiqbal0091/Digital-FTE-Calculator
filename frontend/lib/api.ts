@@ -2,14 +2,15 @@ import axios from 'axios'
 import { getSession } from 'next-auth/react'
 
 const api = axios.create({
-  baseURL: 'http://localhost:4000/api',
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000/api',
 })
 
 // Auto-attach JWT token from session to every request
 api.interceptors.request.use(async (config) => {
   const session = await getSession()
-  if (session) {
-    config.headers.Authorization = `Bearer ${(session as any).accessToken}`
+  const accessToken = (session as { accessToken?: string } | null)?.accessToken
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`
   }
   return config
 })
