@@ -1,11 +1,21 @@
 import { Router } from 'express'
-import { getEmployees, createEmployee, deleteEmployee, updateEmployee } from '../controllers/employees'
-import { requireAuth } from '../middleware/auth'
+import { authenticate, requireRole } from '../middleware/auth'
+import {
+  getEmployees,
+  createEmployee,
+  deleteEmployee,
+  updateEmployee
+} from '../controllers/employees'
 
 const router = Router()
-router.use(requireAuth)
+
+router.use(authenticate)
+
 router.get('/', getEmployees)
 router.post('/', createEmployee)
 router.put('/:id', updateEmployee)
-router.delete('/:id', deleteEmployee)
+
+// Only admins/owners can delete
+router.delete('/:id', requireRole('admin', 'owner'), deleteEmployee)
+
 export default router

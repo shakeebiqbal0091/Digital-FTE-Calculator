@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import axios from 'axios'
 import {
-  getEmployees, createEmployee, deleteEmployee,
+  getEmployees, createEmployee, deleteEmployee, updateEmployee,
   getDepartments, createDepartment,
-  getConfig, updateConfig, updateEmployee,
-  Employee, Department, Config
+  getConfig, updateConfig,
+  getAutomations, createAutomation, deleteAutomation,
+  Employee, Department, Config, Automation, AutomationSummary
 } from '@/lib/api'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -41,7 +42,15 @@ export default function Dashboard() {
   const [filterType, setFilterType] = useState('')
   const [filterFTE, setFilterFTE] = useState('')
   const [editForm, setEditForm] = useState<Partial<Employee>>({})
-  const [activeTab, setActiveTab] = useState<'overview' | 'employees' | 'departments'>('overview')
+  const [activeTab, setActiveTab]     = useState<'overview'|'employees'|'departments'|'digital-fte'>('overview')
+  const [automations, setAutomations]     = useState<Automation[]>([])
+  const [autoSummary, setAutoSummary]     = useState<AutomationSummary>({ totalHoursSaved:0, totalDigitalFTE:0, count:0 })
+  const [autoName, setAutoName]           = useState('')
+  const [autoDesc, setAutoDesc]           = useState('')
+  const [autoDept, setAutoDept]           = useState('')
+  const [autoHours, setAutoHours]         = useState<number>(0)
+  const [autoEmployees, setAutoEmployees] = useState<number>(1)
+  const [autoStatus, setAutoStatus]       = useState<'ACTIVE'|'PILOT'|'PLANNED'>('ACTIVE')
   const [loadError, setLoadError] = useState<string | null>(null)
   const { data: session } = useSession()
 
@@ -58,22 +67,18 @@ export default function Dashboard() {
     return 'An unexpected error occurred while loading data.'
   }
 
-  const fetchAll = useCallback(async () => {
-    try {
-      setLoadError(null)
-      const [emps, depts, cfg] = await Promise.all([
-        getEmployees(), getDepartments(), getConfig()
-      ])
-      setEmployees(emps)
-      setDepartments(depts)
-      setConfig(cfg)
-      setStdHours(cfg.standardHours)
-    } catch (error) {
-      setLoadError(getRequestErrorMessage(error))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const fetchAll = async () => {
+    const [emps, depts, cfg, autoData] = await Promise.all([
+      getEmployees(), getDepartments(), getConfig(), getAutomations()
+    ])
+    setEmployees(emps)
+    setDepartments(depts)
+    setConfig(cfg)
+    setStdHours(cfg.standardHours)
+    setAutomations(autoData.automations)
+    setAutoSummary(autoData.summary)
+    setLoading(false)
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -137,6 +142,22 @@ export default function Dashboard() {
     } catch {
       alert('Failed to update config. Please check backend connection.')
     }
+  }
+  const handleAddAutomation = async () => {
+    if (!autoName || !autoDept || !autoHours || !autoEmployees)
+      return alert('Fill all required fields')
+    await createAutomation({
+      name: autoName, description: autoDesc,
+      departmentId: parseInt(autoDept),
+      hoursSavedPerWeek: autoHours,
+      employeesAffected: autoEmployees,
+      status: autoStatus,
+    })
+    setAutoName(''); setAutoDesc(''); setAutoHours(0); setAutoEmployees(1)
+    fetchAll()
+  }
+  const handleDeleteAutomation = async (id: number) => {
+    await deleteAutomation(id); fetchAll()
   }
 
   const totalFTE = employees.reduce((s, e) => s + e.hoursPerWeek / config.standardHours, 0)
@@ -219,10 +240,10 @@ export default function Dashboard() {
               </div>
               <span style={{ fontWeight: 600, fontSize: 15, color: '#101828' }}>FTE Calculator</span>
             </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {(['overview', 'employees', 'departments'] as const).map(tab => (
-                <button key={tab} className={`nav-tab${activeTab === tab ? ' active' : ''}`} onClick={() => setActiveTab(tab)}>
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            <div style={{ display:'flex', gap:4, overflowX:'auto', maxWidth:'46vw', paddingBottom:2 }}>
+              {(['overview','employees','departments','digital-fte'] as const).map(tab => (
+                <button key={tab} className={`nav-tab${activeTab===tab?' active':''}`} onClick={() => setActiveTab(tab)} style={{ flexShrink: 0 }}>
+                  {tab === 'digital-fte' ? '🤖 Digital FTE' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </button>
               ))}
             </div>
@@ -656,6 +677,194 @@ export default function Dashboard() {
               )}
             </div>
           )}
+          {/* DIGITAL FTE TAB */}
+          {activeTab === 'digital-fte' && (
+            <div className="card">
+              <div style={{ marginBottom:28 }}>
+                <h2 style={{ fontSize:22, fontWeight:600, color:'#101828', marginBottom:4 }}>Digital FTE</h2>
+                <p style={{ fontSize:14, color:'#667085' }}>Track automation savings and measure their impact in FTE units</p>
+              </div>
+
+              {/* Summary Cards */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:28 }}>
+                {[
+                  { label:'Current FTE',        value:totalFTE.toFixed(2),                    sub:'manual workforce',      icon:'👥', color:'#0F62FE', bg:'#EFF4FF' },
+                  { label:'Digital FTE Saved',   value:autoSummary.totalDigitalFTE.toFixed(2), sub:'via automation',        icon:'🤖', color:'#059669', bg:'#ECFDF5' },
+                  { label:'Hours Saved/Week',    value:autoSummary.totalHoursSaved,             sub:'across all processes',  icon:'⏱️', color:'#D97706', bg:'#FFFBEB' },
+                  { label:'Automations',         value:autoSummary.count,                       sub:'active processes',      icon:'⚡', color:'#7C3AED', bg:'#F5F3FF' },
+                ].map(c => (
+                  <div key={c.label} style={{ background:'#fff', borderRadius:12, padding:'20px 24px', border:'1px solid #E4E7EC', transition:'box-shadow 0.2s' }}
+                    onMouseEnter={e => (e.currentTarget.style.boxShadow='0 4px 12px rgba(0,0,0,0.08)')}
+                    onMouseLeave={e => (e.currentTarget.style.boxShadow='none')}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+                      <span style={{ fontSize:12, fontWeight:500, color:'#667085', textTransform:'uppercase', letterSpacing:'0.05em' }}>{c.label}</span>
+                      <div style={{ width:36, height:36, borderRadius:8, background:c.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>{c.icon}</div>
+                    </div>
+                    <div style={{ fontSize:28, fontWeight:600, color:'#101828', letterSpacing:'-0.5px', marginBottom:4 }}>{c.value}</div>
+                    <div style={{ fontSize:12.5, color:'#98A2B3' }}>{c.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* FTE Impact Overview */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', padding:'24px', marginBottom:24 }}>
+                <div style={{ marginBottom:20 }}>
+                  <h3 style={{ fontSize:14, fontWeight:600, color:'#101828' }}>FTE Impact Overview</h3>
+                  <p style={{ fontSize:12.5, color:'#98A2B3', marginTop:2 }}>Manual FTE vs Digital FTE saved through automation</p>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:32, alignItems:'center' }}>
+                  <div>
+                    {[
+                      { label:'Current FTE (Manual)', value:totalFTE,                          color:'#0F62FE' },
+                      { label:'Digital FTE Saved',    value:autoSummary.totalDigitalFTE,        color:'#059669' },
+                      { label:'Net FTE Required',     value:Math.max(0, totalFTE - autoSummary.totalDigitalFTE), color:'#D97706' },
+                    ].map(bar => {
+                      const max = Math.max(totalFTE, autoSummary.totalDigitalFTE) || 1
+                      return (
+                        <div key={bar.label} style={{ marginBottom:18 }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+                            <span style={{ fontSize:13, color:'#344054', fontWeight:500 }}>{bar.label}</span>
+                            <span style={{ fontSize:13, fontWeight:700, color:'#101828' }}>{bar.value.toFixed(2)}</span>
+                          </div>
+                          <div style={{ height:10, background:'#F2F4F7', borderRadius:99, overflow:'hidden' }}>
+                            <div style={{
+                              height:'100%', borderRadius:99, background:bar.color,
+                              width:`${Math.min(100,(bar.value/max)*100)}%`,
+                              transition:'width 0.6s ease'
+                            }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div style={{ background:'#F9FAFB', borderRadius:12, padding:'24px', textAlign:'center' }}>
+                    <div style={{ fontSize:12, color:'#98A2B3', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:500 }}>Estimated Annual Saving</div>
+                    <div style={{ fontSize:36, fontWeight:700, color:'#059669', letterSpacing:'-1px' }}>
+                      ${Math.round(autoSummary.totalDigitalFTE * 50000).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize:12.5, color:'#98A2B3', marginTop:6 }}>@ $50,000 avg salary per FTE</div>
+                    <div style={{ marginTop:16, padding:'10px 14px', background:'#ECFDF5', borderRadius:8 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:'#065F46' }}>
+                        {autoSummary.totalDigitalFTE > 0
+                          ? `${((autoSummary.totalDigitalFTE / (totalFTE || 1)) * 100).toFixed(1)}% of workforce automated`
+                          : 'No automations logged yet'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Add Automation Form */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', padding:'20px 24px', marginBottom:20 }}>
+                <h3 style={{ fontSize:13.5, fontWeight:600, color:'#344054', marginBottom:16 }}>Log New Automation</h3>
+                <div style={{ display:'grid', gridTemplateColumns:'2fr 1.5fr 1fr 1fr 1fr auto', gap:10, alignItems:'flex-end', marginBottom:12 }}>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Process name *</label>
+                    <input value={autoName} onChange={e => setAutoName(e.target.value)} placeholder="e.g. Invoice Processing"
+                      style={{ padding:'9px 12px', border:'1px solid #E4E7EC', borderRadius:8, fontSize:13.5, background:'#fff', color:'#101828', outline:'none', width:'100%', fontFamily:'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Department *</label>
+                    <select value={autoDept} onChange={e => setAutoDept(e.target.value)}
+                      style={{ padding:'9px 12px', border:'1px solid #E4E7EC', borderRadius:8, fontSize:13.5, background:'#fff', color:'#101828', outline:'none', width:'100%', fontFamily:'inherit' }}>
+                      <option value="">Select department...</option>
+                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Hrs saved/week *</label>
+                    <input type="number" value={autoHours||''} min={0} onChange={e => setAutoHours(Number(e.target.value))} placeholder="e.g. 20"
+                      style={{ padding:'9px 12px', border:'1px solid #E4E7EC', borderRadius:8, fontSize:13.5, background:'#fff', color:'#101828', outline:'none', width:'100%', fontFamily:'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Employees affected *</label>
+                    <input type="number" value={autoEmployees||''} min={1} onChange={e => setAutoEmployees(Number(e.target.value))} placeholder="e.g. 3"
+                      style={{ padding:'9px 12px', border:'1px solid #E4E7EC', borderRadius:8, fontSize:13.5, background:'#fff', color:'#101828', outline:'none', width:'100%', fontFamily:'inherit' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Status</label>
+                    <select value={autoStatus} onChange={e => setAutoStatus(e.target.value as 'ACTIVE' | 'PILOT' | 'PLANNED')}
+                      style={{ padding:'9px 12px', border:'1px solid #E4E7EC', borderRadius:8, fontSize:13.5, background:'#fff', color:'#101828', outline:'none', width:'100%', fontFamily:'inherit' }}>
+                      <option value="ACTIVE">Active</option>
+                      <option value="PILOT">Pilot</option>
+                      <option value="PLANNED">Planned</option>
+                    </select>
+                  </div>
+                  <button onClick={handleAddAutomation}
+                    style={{ padding:'9px 20px', background:'#0F62FE', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13.5, fontWeight:500, fontFamily:'inherit', whiteSpace:'nowrap', height:40 }}>
+                    + Log
+                  </button>
+                </div>
+                <div>
+                  <label style={{ fontSize:12, fontWeight:500, color:'#344054', display:'block', marginBottom:6 }}>Description (optional)</label>
+                  <input value={autoDesc} onChange={e => setAutoDesc(e.target.value)}
+                    placeholder="Brief description of what this automation does..."
+                    style={{ padding:'9px 12px', border:'1px solid #E4E7EC', borderRadius:8, fontSize:13.5, background:'#fff', color:'#101828', outline:'none', width:'100%', maxWidth:600, fontFamily:'inherit' }} />
+                </div>
+              </div>
+
+              {/* Automations Table */}
+              <div style={{ background:'#fff', borderRadius:12, border:'1px solid #E4E7EC', overflow:'hidden' }}>
+                <div style={{ padding:'20px 24px', borderBottom:'1px solid #F2F4F7' }}>
+                  <h3 style={{ fontSize:14, fontWeight:600, color:'#101828' }}>Logged Automations</h3>
+                  <p style={{ fontSize:12.5, color:'#98A2B3', marginTop:2 }}>{automations.length} processes tracked</p>
+                </div>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13.5 }}>
+                  <thead>
+                    <tr style={{ background:'#F9FAFB' }}>
+                      {['Process','Department','Status','Hrs Saved/wk','Employees','Digital FTE','Annual Saving',''].map(h => (
+                        <th key={h} style={{ padding:'10px 20px', textAlign:'left', fontSize:12, fontWeight:500, color:'#667085', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {automations.length === 0 ? (
+                      <tr><td colSpan={8} style={{ padding:'48px', textAlign:'center', color:'#D0D5DD', fontSize:13.5 }}>
+                        No automations logged yet. Add your first one above.
+                      </td></tr>
+                    ) : automations.map(a => {
+                      const sc: Record<string,{bg:string;color:string}> = {
+                        ACTIVE:  { bg:'#ECFDF5', color:'#065F46' },
+                        PILOT:   { bg:'#FFFBEB', color:'#92400E' },
+                        PLANNED: { bg:'#F5F3FF', color:'#5B21B6' },
+                      }
+                      return (
+                        <tr key={a.id} style={{ borderTop:'1px solid #F2F4F7' }}>
+                          <td style={{ padding:'14px 20px' }}>
+                            <div style={{ fontWeight:500, color:'#101828' }}>{a.name}</div>
+                            {a.description && <div style={{ fontSize:12, color:'#98A2B3', marginTop:2 }}>{a.description}</div>}
+                          </td>
+                          <td style={{ padding:'14px 20px', color:'#667085' }}>{a.department.name}</td>
+                          <td style={{ padding:'14px 20px' }}>
+                            <span style={{ padding:'3px 10px', borderRadius:99, fontSize:12, fontWeight:500, background:sc[a.status].bg, color:sc[a.status].color }}>
+                              {a.status.charAt(0) + a.status.slice(1).toLowerCase()}
+                            </span>
+                          </td>
+                          <td style={{ padding:'14px 20px', fontWeight:600, color:'#101828' }}>{a.hoursSavedPerWeek}h</td>
+                          <td style={{ padding:'14px 20px', color:'#667085' }}>{a.employeesAffected}</td>
+                          <td style={{ padding:'14px 20px' }}>
+                            <span style={{ fontSize:16, fontWeight:700, color:'#059669' }}>{a.digitalFTE.toFixed(2)}</span>
+                          </td>
+                          <td style={{ padding:'14px 20px', fontWeight:600, color:'#059669' }}>
+                            ${Math.round(a.digitalFTE * 50000).toLocaleString()}
+                          </td>
+                          <td style={{ padding:'14px 20px' }}>
+                            <button onClick={() => handleDeleteAutomation(a.id)}
+                              style={{ width:32, height:32, borderRadius:6, border:'1px solid #E4E7EC', background:'#fff', cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center', color:'#667085', transition:'all 0.15s' }}
+                              onMouseEnter={ev=>{ev.currentTarget.style.borderColor='#F04438';ev.currentTarget.style.color='#F04438'}}
+                              onMouseLeave={ev=>{ev.currentTarget.style.borderColor='#E4E7EC';ev.currentTarget.style.color='#667085'}}>
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </>

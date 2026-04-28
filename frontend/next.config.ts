@@ -1,7 +1,9 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  turbopack: {
+    root: __dirname    // tells Next.js "this folder is the root"
+  }
+}
 
-export default nextConfig;
+export default nextConfig

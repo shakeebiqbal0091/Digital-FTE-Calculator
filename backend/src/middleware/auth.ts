@@ -1,24 +1,56 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fte_secret_key'
+export interface AuthPayload {
+  userId: string
+  orgId: number        // ✅ only orgId — no tenantId in your schema
+  role: string
+}
 
 export interface AuthRequest extends Request {
-  userId?: number
+  user?: AuthPayload
   orgId?: number
 }
 
-export const requireAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization
-  if (!authHeader) return res.status(401).json({ error: 'No token provided' })
-
-  try {
-    const token = authHeader.split(' ')[1]
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: number; orgId: number }
-    req.userId = payload.userId
-    req.orgId = payload.orgId
-    next()
-  } catch {
-    res.status(401).json({ error: 'Invalid token' })
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthPayload
+      orgId?: number
+    }
   }
 }
+
+
+export function authenticate(req: Request, res: Response, next: NextFunction) {
+  try {
+    const authHeader = req.headers.authorization
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing or invalid token' })
+    }
+
+    const token = authHeader.split(' ')[1]
+    const secret = process.env.JWT_SECRET
+    if (!secret) throw new Error('JWT_SECRET not configured')
+
+    const decoded = jwt.verify(token, secret) as AuthPayload
+    req.user = decoded
+    req.orgId = Number(decoded.orgId)   // ✅ ensure it's always a number
+    next()
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+}
+
+
+export function requireRole(...roles: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' })
+    }
+    next()
+  }
+}
+
+export const requireAuth = authenticate

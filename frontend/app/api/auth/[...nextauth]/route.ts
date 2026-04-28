@@ -1,69 +1,46 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import type { Session, User } from 'next-auth'
-import type { JWT } from 'next-auth/jwt'
 import axios from 'axios'
-
-type AuthUser = User & {
-  accessToken?: string
-  organization?: unknown
-}
-
-type AppToken = JWT & {
-  myAccessToken?: string
-  organization?: unknown
-}
-
-type AppSession = Session & {
-  accessToken?: string
-  organization?: unknown
-}
 
 const handler = NextAuth({
   providers: [
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        email:    { label: 'Email',    type: 'email'    },
-        password: { label: 'Password', type: 'password' },
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' }
       },
       async authorize(credentials) {
         try {
-          const res = await axios.post('http://localhost:4000/api/auth/login', {
-            email:    credentials?.email,
-            password: credentials?.password,
-          })
-          const { token, user, organization } = res.data
-          if (token && user) {
-            return { ...user, accessToken: token, organization }
+          const res = await axios.post(
+            `${process.env.BACKEND_URL}/api/auth/login`,
+            { email: credentials?.email, password: credentials?.password }
+          )
+          if (res.data?.token) {
+            return { ...res.data, email: credentials?.email }
           }
           return null
         } catch {
           return null
         }
-      },
-    }),
+      }
+    })
   ],
+  session: { strategy: 'jwt', maxAge: 15 * 60 },  // matches backend token
   callbacks: {
     async jwt({ token, user }) {
-      const appToken = token as AppToken
-      if (user) {
-        const authUser = user as AuthUser
-        appToken.myAccessToken = authUser.accessToken
-        appToken.organization = authUser.organization
-      }
-      return appToken
+      if (user) token.accessToken = (user as any).token
+      return token
     },
     async session({ session, token }) {
-      const appSession = session as AppSession
-      const appToken = token as AppToken
-      appSession.accessToken = appToken.myAccessToken
-      appSession.organization = appToken.organization
-      return appSession
-    },
+      (session as any).accessToken = token.accessToken
+      return session
+    }
   },
-  pages:   { signIn: '/login' },
-  session: { strategy: 'jwt' },
+  pages: {
+    signIn: '/login'   // your custom login page
+  },
+  secret: process.env.NEXTAUTH_SECRET
 })
 
 export { handler as GET, handler as POST }
